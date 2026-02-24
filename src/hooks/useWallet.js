@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { web3Service } from '../services/web3'
+import { web3Service } from '../Services/web3'
 import { ethers } from 'ethers'
 
 export const useWallet = () => {

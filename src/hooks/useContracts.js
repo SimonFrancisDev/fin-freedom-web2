@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
-import { web3Service } from '../services/web3'
+import { web3Service } from '../Services/web3'
 
 export const useContracts = () => {
   const [contracts, setContracts] = useState(null)
