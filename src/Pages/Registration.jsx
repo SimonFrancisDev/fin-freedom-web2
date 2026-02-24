@@ -15,9 +15,15 @@ export const Registration = () => {
   const [usdtBalance, setUsdtBalance] = useState('0')
   const [allowance, setAllowance] = useState('0')
   const [txStatus, setTxStatus] = useState({ loading: false, hash: null, error: null })
-  const [mintAmount, setMintAmount] = useState('100') // FIX: Added mint state
+  const [mintAmount, setMintAmount] = useState('100')
+  // NEW: Deployer states
+  const [isDeployer, setIsDeployer] = useState(false)
+  const [deployerUsdtBalance, setDeployerUsdtBalance] = useState('0')
+  const [transferAmount, setTransferAmount] = useState('100')
+  const [transferAddress, setTransferAddress] = useState('')
+  const [showTransferToSelf, setShowTransferToSelf] = useState(true)
   
-  // LAB THEME STYLES
+  // LAB THEME STYLES (keep your existing styles)
   const registrationStyles = `
     @keyframes pulse-line {
       0% { background-position: 0% 50%; }
@@ -76,6 +82,23 @@ export const Registration = () => {
       border-radius: 12px;
       font-weight: 700;
     }
+    .deployer-badge {
+      background: #002366;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: inline-block;
+      margin-left: 10px;
+    }
+    .faucet-section {
+      border-top: 1px dashed #002366;
+      margin-top: 15px;
+      padding-top: 15px;
+    }
   `;
 
   const levelPrices = {
@@ -87,7 +110,31 @@ export const Registration = () => {
     if (isConnected) { loadContracts() }
   }, [isConnected])
 
-  // FIX: Auto-refresh levels after any transaction
+  // NEW: Check if current user is the deployer (owner of Registration contract)
+  useEffect(() => {
+    const checkDeployerStatus = async () => {
+      if (!contracts || !account) return
+      try {
+        const owner = await contracts.registration.owner()
+        const isOwner = owner.toLowerCase() === account.toLowerCase()
+        setIsDeployer(isOwner)
+        
+        // If deployer, get their USDT balance
+        if (isOwner && contracts.usdt) {
+          const balance = await contracts.usdt.balanceOf(account)
+          setDeployerUsdtBalance(ethers.formatUnits(balance, 6))
+        }
+        
+        // Set transfer address to current account by default
+        setTransferAddress(account)
+      } catch (err) {
+        console.error('Error checking deployer status:', err)
+      }
+    }
+    checkDeployerStatus()
+  }, [contracts, account])
+
+  // Auto-refresh levels after any transaction
   useEffect(() => {
     const refreshAllLevels = async () => {
       if (!contracts || !account) return
@@ -164,24 +211,84 @@ export const Registration = () => {
     }
   }
 
-  // FIX: Added mint function
-  const handleMint = async () => {
+  // REMOVED: handleMint function - USDT cannot be minted by users
+  // The mint function has been removed as regular users cannot mint USDT
+
+  // NEW: Handle USDT transfer from deployer to self
+  const handleTransferToSelf = async () => {
     setTxStatus({ loading: true, hash: null, error: null })
     try {
-      const amount = ethers.parseUnits(mintAmount, 6)
-      const tx = await contracts.usdt.mint(amount)
+      if (!isDeployer) {
+        throw new Error('Only deployer can transfer USDT')
+      }
+      
+      const amount = ethers.parseUnits(transferAmount, 6)
+      
+      // Check deployer balance
+      const balance = await contracts.usdt.balanceOf(account)
+      if (balance < amount) {
+        throw new Error(`Insufficient USDT balance. You have ${ethers.formatUnits(balance, 6)} USDT`)
+      }
+      
+      // Transfer to self (current account)
+      const tx = await contracts.usdt.transfer(account, amount)
       setTxStatus({ loading: true, hash: tx.hash, error: null })
       await tx.wait()
-      const balance = await contracts.usdt.balanceOf(account)
-      setUsdtBalance(ethers.formatUnits(balance, 6))
+      
+      // Refresh balances
+      const newBalance = await contracts.usdt.balanceOf(account)
+      setUsdtBalance(ethers.formatUnits(newBalance, 6))
+      setDeployerUsdtBalance(ethers.formatUnits(newBalance, 6))
+      
       setTxStatus({ loading: false, hash: tx.hash, error: null })
     } catch (err) {
-      console.error('Mint error:', err)
+      console.error('Transfer error:', err)
       setTxStatus({ loading: false, hash: null, error: err.message })
     }
   }
 
-  // FIX: Improved activation with balance check and error rollback
+  // NEW: Handle USDT transfer from deployer to any address
+  const handleTransferToAddress = async () => {
+    setTxStatus({ loading: true, hash: null, error: null })
+    try {
+      if (!isDeployer) {
+        throw new Error('Only deployer can transfer USDT')
+      }
+      
+      if (!ethers.isAddress(transferAddress)) {
+        throw new Error('Invalid recipient address')
+      }
+      
+      const amount = ethers.parseUnits(transferAmount, 6)
+      
+      // Check deployer balance
+      const balance = await contracts.usdt.balanceOf(account)
+      if (balance < amount) {
+        throw new Error(`Insufficient USDT balance. You have ${ethers.formatUnits(balance, 6)} USDT`)
+      }
+      
+      // Transfer to specified address
+      const tx = await contracts.usdt.transfer(transferAddress, amount)
+      setTxStatus({ loading: true, hash: tx.hash, error: null })
+      await tx.wait()
+      
+      // Refresh deployer balance
+      const newDeployerBalance = await contracts.usdt.balanceOf(account)
+      setDeployerUsdtBalance(ethers.formatUnits(newDeployerBalance, 6))
+      
+      // If transferring to current account, refresh user balance too
+      if (transferAddress.toLowerCase() === account.toLowerCase()) {
+        const newBalance = await contracts.usdt.balanceOf(account)
+        setUsdtBalance(ethers.formatUnits(newBalance, 6))
+      }
+      
+      setTxStatus({ loading: false, hash: tx.hash, error: null })
+    } catch (err) {
+      console.error('Transfer error:', err)
+      setTxStatus({ loading: false, hash: null, error: err.message })
+    }
+  }
+
   const handleActivateLevel = async () => {
     setTxStatus({ loading: true, hash: null, error: null })
     try {
@@ -189,7 +296,13 @@ export const Registration = () => {
       const balance = await contracts.usdt.balanceOf(account)
       const price = ethers.parseUnits(levelPrices[level], 6)
       if (balance < price) {
-        throw new Error(`Insufficient USDT balance. You have ${ethers.formatUnits(balance, 6)} USDT but need ${levelPrices[level]} USDT. Please mint USDT first.`)
+        throw new Error(`Insufficient USDT balance. You have ${ethers.formatUnits(balance, 6)} USDT but need ${levelPrices[level]} USDT. Please request USDT from the deployer.`)
+      }
+
+      // Check allowance
+      const currentAllowance = await contracts.usdt.allowance(account, contracts.levelManager.target)
+      if (currentAllowance < price) {
+        throw new Error(`Insufficient allowance. Please approve USDT spending first.`)
       }
 
       const tx = await contracts.registration.activateLevel(level)
@@ -209,7 +322,7 @@ export const Registration = () => {
     } catch (err) {
       console.error('Activation error:', err)
       
-      // FIX: Refresh actual status to correct UI
+      // Refresh actual status to correct UI
       try {
         const actualStatus = await contracts.registration.levelActivated(account, level)
         setActiveLevels(prev => ({ ...prev, [level]: actualStatus }))
@@ -217,12 +330,12 @@ export const Registration = () => {
         console.error('Error refreshing status:', refreshErr)
       }
 
-      // FIX: Better error messages
+      // Better error messages
       if (err.message?.includes('insufficient funds') || err.code === 'CALL_EXCEPTION') {
         setTxStatus({
           loading: false,
           hash: null,
-          error: 'Transaction failed. This usually means you have insufficient USDT balance. Please check your balance and mint more USDT if needed.'
+          error: 'Transaction failed. This usually means you have insufficient USDT balance. Please request USDT from the deployer.'
         })
       } else {
         setTxStatus({ loading: false, hash: null, error: err.message })
@@ -253,10 +366,13 @@ export const Registration = () => {
       <div className="d-flex align-items-center mb-4">
         <div style={{height: '30px', width: '6px', background: '#002366', marginRight: '15px'}}></div>
         <h1 className="m-0 fw-black text-uppercase" style={{color: '#002366', letterSpacing: '1px', fontSize: '1.8rem'}}>System Registration</h1>
+        {isDeployer && (
+          <span className="deployer-badge">DEPLOYER</span>
+        )}
       </div>
 
       {txStatus.error && (
-        <Alert variant="danger" className="security-alert mb-4" dismissible>
+        <Alert variant="danger" className="security-alert mb-4" dismissible onClose={() => setTxStatus({...txStatus, error: null})}>
           CORE_ERROR: {txStatus.error}
         </Alert>
       )}
@@ -292,41 +408,119 @@ export const Registration = () => {
                   <div className="small text-muted fw-bold text-uppercase">Manager Allowance</div>
                   <div className="fw-bold" style={{color: '#002366'}}>{allowance} <span className="small">USDT</span></div>
                 </Col>
+                {isDeployer && (
+                  <Col sm={12} className="mt-3">
+                    <div className="small text-muted fw-bold text-uppercase">Deployer USDT Balance</div>
+                    <div className="fw-bold" style={{color: '#002366'}}>{deployerUsdtBalance} <span className="small">USDT</span></div>
+                  </Col>
+                )}
               </Row>
             </div>
           </div>
 
-          {/* FIX: Mint USDT Terminal */}
-          <div className="lab-terminal mb-4">
-            <div className="terminal-header">[ MINT_TEST_USDT ]</div>
-            <div className="p-4">
-              <Row>
-                <Col md={8}>
-                  <Form.Control
-                    type="number"
-                    value={mintAmount}
-                    onChange={(e) => setMintAmount(e.target.value)}
-                    className="status-node mb-2"
-                    placeholder="Amount"
+          {/* REPLACED: Mint USDT Terminal with Deployer USDT Faucet */}
+          {isDeployer && (
+            <div className="lab-terminal mb-4">
+              <div className="terminal-header">[ DEPLOYER_USDT_FAUCET ]</div>
+              <div className="p-4">
+                <div className="mb-3">
+                  <Form.Check 
+                    type="switch"
+                    id="transfer-mode-switch"
+                    label="Transfer to specific address"
+                    checked={!showTransferToSelf}
+                    onChange={() => setShowTransferToSelf(!showTransferToSelf)}
                   />
-                </Col>
-                <Col md={4}>
-                  <Button
-                    variant="success"
-                    className="btn-protocol w-100"
-                    onClick={handleMint}
-                    disabled={txStatus.loading}
-                    style={{background: '#28a745'}}
-                  >
-                    MINT
-                  </Button>
-                </Col>
-              </Row>
-              <div className="small text-muted mt-2">
-                Need test USDT? Mint here before activation.
+                </div>
+                
+                {showTransferToSelf ? (
+                  // Simple transfer to self
+                  <>
+                    <Row>
+                      <Col md={8}>
+                        <Form.Control
+                          type="number"
+                          value={transferAmount}
+                          onChange={(e) => setTransferAmount(e.target.value)}
+                          className="status-node mb-2"
+                          placeholder="Amount"
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <Button
+                          variant="success"
+                          className="btn-protocol w-100"
+                          onClick={handleTransferToSelf}
+                          disabled={txStatus.loading}
+                          style={{background: '#28a745'}}
+                        >
+                          {txStatus.loading ? <Spinner size="sm" /> : 'SEND TO SELF'}
+                        </Button>
+                      </Col>
+                    </Row>
+                    <div className="small text-muted mt-2">
+                      Transfer USDT from deployer to your current address.
+                    </div>
+                  </>
+                ) : (
+                  // Transfer to any address
+                  <>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small fw-bold text-muted text-uppercase">Recipient Address</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={transferAddress}
+                        onChange={(e) => setTransferAddress(e.target.value)}
+                        className="status-node"
+                        placeholder="0x..."
+                      />
+                    </Form.Group>
+                    <Row>
+                      <Col md={8}>
+                        <Form.Control
+                          type="number"
+                          value={transferAmount}
+                          onChange={(e) => setTransferAmount(e.target.value)}
+                          className="status-node mb-2"
+                          placeholder="Amount"
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <Button
+                          variant="success"
+                          className="btn-protocol w-100"
+                          onClick={handleTransferToAddress}
+                          disabled={txStatus.loading}
+                          style={{background: '#28a745'}}
+                        >
+                          {txStatus.loading ? <Spinner size="sm" /> : 'TRANSFER'}
+                        </Button>
+                      </Col>
+                    </Row>
+                    <div className="small text-muted mt-2">
+                      Transfer USDT from deployer to any test address.
+                    </div>
+                  </>
+                )}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* If not deployer, show informational message about getting USDT */}
+          {!isDeployer && (
+            <div className="lab-terminal mb-4">
+              <div className="terminal-header">[ USDT_ACQUISITION ]</div>
+              <div className="p-4">
+                <Alert variant="info" className="mb-0">
+                  <strong>⚠️ USDT Required for Activation</strong>
+                  <p className="mt-2 mb-0 small">
+                    You need USDT to activate levels. Since this is testnet, please request USDT from the deployer.
+                    The deployer can send USDT to your address using their faucet.
+                  </p>
+                </Alert>
+              </div>
+            </div>
+          )}
 
           {/* Action Terminal */}
           <div className="lab-terminal mb-4">
@@ -428,4 +622,4 @@ export const Registration = () => {
       </Row>
     </Container>
   )
-        }
+}
