@@ -2,11 +2,11 @@ import React from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Container } from 'react-bootstrap'
 import { Navigation } from './components/Layout/Navbar'
-import { Dashboard } from './pages/Dashboard.jsx';
-import { Registration } from './pages/Registration'
-import { Orbits } from './pages/Orbits'
-import { FounderPanel } from './pages/FounderPanel'
-import { AdminPanel } from './pages/AdminPanel'
+import { Dashboard } from './Pages/Dashboard.jsx';
+import { Registration } from './Pages/Registration'
+import { Orbits } from './Pages/Orbits'
+import { FounderPanel } from './Pages/FounderPanel'
+import { AdminPanel } from './Pages/AdminPanel'
 import './App.css'
 
 function App() {
