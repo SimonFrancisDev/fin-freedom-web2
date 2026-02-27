@@ -623,7 +623,6 @@ export const Registration = () => {
     </Container>
   )
 }
-<<<<<<< HEAD
 
 
 
@@ -1255,5 +1254,3 @@ export const Registration = () => {
 //     </Container>
 //   )
 // }
-=======
->>>>>>> 4a0ce0ffcc03178a2365fc3f69ea09d32254e066
